@@ -1,0 +1,15 @@
+# Credentials
+credentials.md
+
+# Log files
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
