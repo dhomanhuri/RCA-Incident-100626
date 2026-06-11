@@ -126,7 +126,7 @@ Tidak ada commit konfigurasi di 10 Juni 2026:
 
 ### Kandidat Root Cause (Direvisi)
 
-#### 🔴 Kandidat 1 (TERKUAT): Degradasi Fisik Link Upstream di xe-2/0/2
+#### 🔴 ROOT CAUSE TERKONFIRMASI: Degradasi Fisik Link di xe-2/0/2
 
 **Evidence:**
 - Physical port xe-2/0/2 drop 57% — semua sub-interface mengikuti
@@ -134,6 +134,16 @@ Tidak ada commit konfigurasi di 10 Juni 2026:
 - PCS Bit errors & Errored blocks = 5 seconds — ada degradasi sinyal fisik
 - MTU errors 5,677,146 — indikasi kualitas link yang buruk
 - **Carrier transitions = 5** (akumulatif) — pernah ada link down/up
+
+**Logika konfirmasi:**
+```
+xe-2/0/2 (1 physical port)
+    ├── xe-2/0/2.2722 → IIX Domestic     ┐
+    ├── xe-2/0/2.2723 → International   ├─ Semua DROP serentak
+    ├── xe-2/0/2.932  → IPTV Direct Peer ┘
+    └── xe-2/0/2.11   → Uplink ke MikroTik ← downstream ikut terdampak
+```
+Jika **semua upstream** (IIX, International, IPTV) drop serentak di port yang sama → **downstream pasti ikut terdampak**. Ini bukan masalah di MikroTik, bukan Starlink, bukan BGP routing.
 
 **Mekanisme:** Link fisik upstream (fiber/kabel/SFP) mengalami degradasi bertahap sejak 19:12, mencapai titik kritis di 20:25 sehingga capacity drop drastis, kemudian recovery bertahap selama ~50 menit.
 
