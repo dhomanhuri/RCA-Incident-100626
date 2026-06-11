@@ -15,30 +15,39 @@ Root cause analysis traffic drop pada MikroTik MGW2-CYB1 yang terjadi pada 2026-
 ## Topologi (Lengkap)
 
 ```
-Internet (IIX, International Transit, IPTV)
-    │ ← koneksi FISIK langsung ke CSW
-    ▼
-┌───────────────────────────────────┐
-│  CSW1-CYB1 (QFX5120, 172.30.0.9)     │
-│  Core Switch — semua colok ke sini    │
-└───────────────────────────────────┘
-    │           │           │
-    │xe-0/0/33  │xe-0/0/30  │xe-0/0/31...
-    │⚠️FLAP     │           │
-    ▼           ▼           ▼
-IGW1-CYB1   MGW2-CYB1   MGW-CYB-1 ...
-(Juniper    (MikroTik)  (MikroTik)
-MX240)          │
- BGP router     ▼
-            Starlink
-                │
-                ▼
-            Customer
+┌──────────────────────────────────────────────┐
+│      Internet (IIX, International, IPTV)          │
+│         (koneksi fisik masuk ke CSW)               │
+└───────────────────────▬──────────────────────┘
+                       │
+                       ▼
+       ┌─────────────────────┐
+       │  CSW1-CYB1 (QFX5120)  │  Core Switch
+       │    172.30.0.9          │  semua device colok sini
+       └─────────────────────┘
+          │              │
+     xe-0/0/33       xe-0/0/30/31...
+      ⚠️ FLAP
+          │              │
+          ▼              ▼
+   IGW1-CYB1         MGW2-CYB1     MGW lain
+  (Juniper MX240)   (MikroTik)
+  150.242.176.161   150.242.176.185
+   BGP Router                │
+                   ┌──────┴──────┐
+                   │              │
+             Starlink Bulk1   Starlink Bulk2
+             (primary)        (secondary)
+                   │              │
+                   └────▬────┘
+                         │
+                         ▼
+                     Customer
 ```
 
-> **Semua device fisik terhubung ke CSW1-CYB1.**
-> IGW bukan "di atas" CSW, tapi colok ke CSW sebagai router BGP.
-> Ketika link CSW ↔ IGW (xe-0/0/33) flap → routing dari IGW terganggu → traffic tidak bisa keluar ke internet.
+> Semua koneksi fisik (internet, IGW, MGW) terhubung ke CSW.
+> IGW = router BGP saja, bukan transit path.
+> Link CSW ↔ IGW (xe-0/0/33) flap → routing terganggu → customer tidak bisa internet.
 
 ## BGP Peers IGW1-CYB1
 

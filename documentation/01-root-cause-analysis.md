@@ -31,31 +31,40 @@
 ## 2. Topologi (Lengkap)
 
 ```
-Internet (IIX, International Transit, IPTV)
-    │ ← koneksi FISIK langsung masuk ke CSW
-    ▼
-┌───────────────────────────────────┐
-│  CSW1-CYB1 (QFX5120, 172.30.0.9)     │
-│  Core Switch — semua device colok sini │
-└───────────────────────────────────┘
-    │           │           │
- xe-0/0/33  xe-0/0/30  xe-0/0/31...
-  ⚠️FLAP!
-    │           │           │
-    ▼           ▼           ▼
-IGW1-CYB1   MGW2-CYB1   MGW-CYB-1
-(Juniper    (MikroTik,   (MikroTik)
-MX240)       150.242.176.185)
-BGP router       │
-                 ▼
-             Starlink Bulk1/2
-                 │
-                 ▼
-             Customer
+┌───────────────────────────────────────────────────────┐
+│        Internet (IIX, International, IPTV)         │
+│           (koneksi fisik masuk ke CSW)              │
+└──────────────────────────────▬───────────────────────┘
+                               │
+                               ▼
+               ┌─────────────────────┐
+               │  CSW1-CYB1 (QFX5120)  │
+               │    172.30.0.9          │
+               │    Core Switch         │
+               └─────────────────────┘
+                  │              │
+             xe-0/0/33       xe-0/0/30 / xe-0/0/31 ...
+              ⚠️ FLAP
+                  │              │
+                  ▼              ▼
+           IGW1-CYB1         MGW2-CYB1        MGW-CYB-1 ...
+          (Juniper MX240)   (MikroTik CCR2116)(MikroTik)
+          150.242.176.161   150.242.176.185
+           BGP Router                │
+                         ┌────────┴────────┐
+                         │                  │
+                    Starlink Bulk1      Starlink Bulk2
+                    (primary)           (secondary)
+                         │                  │
+                         └──────▬──────┘
+                                │
+                                ▼
+                            Customer
 ```
 
-> Semua koneksi fisik (internet upstream, IGW, MGW) terhubung ke CSW.
-> IGW bertugas sebagai router BGP — menerima dan memasang routing table dari/ke internet.
+> Semua koneksi fisik (internet upstream, IGW, MGW) terhubung ke CSW1-CYB1.
+> IGW bertugas sebagai router BGP — menerima dan mendistribusikan routing table internet.
+> Ketika link CSW ↔ IGW (xe-0/0/33) flap → routing internet terganggu → semua MGW tidak bisa forward traffic ke internet.
 
 ```
 Internet
