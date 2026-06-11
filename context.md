@@ -70,5 +70,8 @@ VRRP failover — Mikrotik1 kehilangan peran MASTER dan berpindah ke BACKUP kare
 - [2026-06-11] Temuan kritis: BGP peer IIX 123.108.8.111 flaps 525x, last up 5 hari
 - [2026-06-11] Dokumentasi final diupdate dengan root cause probable
 - [2026-06-11] Akses Observium NMS (nms.nsc.id) berhasil
-- [2026-06-11] Traffic drop terkonfirmasi dari grafik: drop 20:23-21:17 WIB, sebesar ~6-8%
-- [2026-06-11] Drop partial (bukan total) → konsisten dengan BGP peer partial failure (IIX)
+- [2026-06-11] Traffic drop terkonfirmasi dari grafik: drop 20:25-21:17 WIB
+- [2026-06-11] REVISI BESAR: semua interface drop serentak (IIX, International, IPTV, Uplink ke MikroTik)
+- [2026-06-11] IPTV direct peer juga drop 84% → bukan hanya masalah BGP IIX
+- [2026-06-11] BGP International Transit baru naik 22 menit saat investigasi → masalah bisa masih berlanjut
+- [2026-06-11] Root cause direvisi: kemungkinan Juniper xe-2/0/2 micro-flap atau control plane issue

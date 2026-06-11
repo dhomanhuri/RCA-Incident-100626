@@ -31,167 +31,168 @@
 ## 2. Topologi
 
 ```
-Internet (IIX/Transit)
+Internet
     │
-    ├── BGP Peer 113.59.234.208 (AS 45296)  — International Transit
-    ├── BGP Peer 123.108.8.111  (AS 7597)   — Domestic (IIX) ⚠️
-    ├── BGP Peer 123.108.9.111  (AS 7597)   — Domestic (IIX)
-    ├── BGP Peer 10.9.32.1      (AS 150930) — Direct Peering IPTV
-    └── BGP Peer 150.242.176.182 (AS 152069) — Internal
+    ├── BGP 113.59.234.208 (AS 45296)  — International Transit
+    ├── BGP 123.108.8.111  (AS 7597)   — Domestic (IIX) ⚠️
+    ├── BGP 123.108.9.111  (AS 7597)   — Domestic (IIX)
+    ├── BGP 10.9.32.1      (AS 150930) — Direct Peering IPTV
+    └── BGP 150.242.176.182 (AS 152069) — Internal
          │
          ▼
     IGW1-CYB1 (Juniper MX240) — 150.242.176.161
          │
          ▼ xe-2/0/2.11 (150.242.176.161/27)
     MGW2-CYB1 (MikroTik CCR2116) — 150.242.176.185
-         │
-         ├── DOWNLINK sfp-sfpplus1
-         └── UPLINK sfp-sfpplus2
-              ├── v515_STARLINK_BULK1 (primary)
-              └── v531_STARLINK_BULK2 (secondary)
 ```
 
 ---
 
 ## 3. Temuan Investigasi
 
-### 3.1 Log MikroTik — Tidak Tersedia ❌
-Log jam 20:00–21:30 WIB sudah **tertimpa** oleh `radius,debug` logging yang sangat verbose. Buffer log habis.
+### 3.1 Traffic Drop Terkonfirmasi dari Observium ✅
 
-### 3.2 Log Juniper — Tidak Dapat Diakses ❌
-User `plm1` tidak memiliki permission untuk membaca `/var/log/messages` di Juniper (`error: permission denied: log`).
+Data grafik Observium mengkonfirmasi drop terjadi **tepat 20:25 WIB** dan recovery **21:12-21:17 WIB**:
 
-### 3.3 Interface Fisik MikroTik — Normal ✅
-Tidak ada RX error atau TX drop signifikan pada sfp-sfpplus1 dan sfp-sfpplus2.
+| Interface | Normal | Drop (20:25-21:12) | Keterangan |
+|---|---|---|---|
+| xe-2/0/2.11 (Uplink ke MikroTik) | 100% | **~23%** (drop 77%) | Sangat parah |
+| xe-2/0/2.932 (IPTV Direct Peer) | 100% | **~16%** (drop 84%) | Sangat parah |
+| xe-2/0/2.2722 (Domestic IIX) | 100% | **~75%** (drop 25%) | Parah |
+| xe-2/0/2.2723 (International Transit) | 100% | **~52%** (drop 48%) | Parah |
 
-### 3.4 Interface xe-2/0/2 Juniper (Link ke MikroTik) — Ada Error ⚠️
+> ⚠️ **Semua interface drop serentak di 20:25 WIB** — termasuk IPTV Direct Peer yang seharusnya tidak terdampak oleh BGP IIX. Ini mengindikasikan masalah di **layer fisik atau Juniper itu sendiri**, bukan hanya BGP.
+
+### 3.2 BGP Status Saat Investigasi (11 Juni ~10:10 WIB) ⚠️
+
+| BGP Peer | AS | Tipe | Flaps | Last Up/Dwn |
+|---|---|---|---|---|
+| 10.9.32.1 | 150930 | IPTV Direct Peering | 53 | 6w5d (normal) |
+| **113.59.234.208** | 45296 | **International Transit** | 75 | **~22 menit** ← baru naik! |
+| **123.108.8.111** | 7597 | **Domestic IIX** | **525** | **5d** ← sangat flappy |
+| 123.108.9.111 | 7597 | Domestic IIX | 117 | 4w4d |
+| 150.242.176.182 | 152069 | Internal | 109 | 3w0d |
+
+**BGP International Transit (113.59.234.208) baru up ~22 menit saat investigasi** — menunjukkan peer ini juga baru saja reconnect, kemungkinan terkait dengan incident atau masalah yang sedang berlangsung.
+
+### 3.3 Interface Fisik xe-2/0/2 ⚠️
 
 | Metrik | Nilai |
 |---|---|
-| Last flapped | 2024-09-19 (90 minggu lalu — normal, tidak terkait incident) |
-| Input errors | 26,766 (L3 incompletes: 26,758) |
+| Last flapped | 2024-09-19 (90 minggu lalu — tidak terkait incident) |
 | **MTU errors (output)** | **5,677,146** |
-| Carrier transitions | 5 |
+| Input L3 incompletes | 26,758 |
 | PCS Bit errors | 5 seconds |
 
-**MTU errors sebanyak 5,677,146** adalah temuan signifikan — menunjukkan ada ketidakcocokan MTU antara Juniper dan perangkat di downstream (MikroTik atau Starlink).
-
-### 3.5 BGP di Juniper — Temuan Kritis ⚠️
-
-| BGP Peer | AS | Flaps | Last Up | Tipe | Keterangan |
-|---|---|---|---|---|---|
-| 10.9.32.1 | 150930 | 53 | 6w5d | Direct Peering (IPTV) | Normal |
-| 113.59.234.208 | 45296 | 75 | 6w6d | International Transit | Normal |
-| **123.108.8.111** | **7597** | **525** | **5d 10:04** | **Domestic (IIX)** | **KRITIS ⚠️** |
-| 123.108.9.111 | 7597 | 117 | 4w4d | Domestic (IIX) | Elevated |
-| 150.242.176.182 | 152069 | 109 | 3w0d | Internal | Elevated |
-
-**BGP Peer 123.108.8.111 (AS 7597 / Domestic IIX):**
-- Flaps: **525** — sangat tinggi
-- Last up: **hanya 5 hari** — artinya sering disconnect-reconnect
-- Last error: `Hold Timer Expired Error`
-- Error detail: Hold Timer Expired dikirim 75x, Open Message Error dikirim 163x
-- Last flap event: `HoldTime`
-
-Ini menunjukkan **BGP peer IIX mengalami instabilitas yang berulang**, termasuk kemungkinan besar di sekitar jam 20:20 WIB.
+MTU errors sangat tinggi — potensi penyebab packet loss yang memperburuk kondisi.
 
 ---
 
-## 4. Root Cause — Probable
+## 4. Root Cause — Revisi
 
-> **BGP Instability pada peer Domestic IIX (123.108.8.111 / AS 7597)**
+> **Bukan hanya BGP IIX. Semua interface drop serentak → masalah di Juniper layer**
 
-### Mekanisme
+### Hipotesis yang Direvisi
 
-```
-BGP peer 123.108.8.111 (Domestic IIX) Hold Timer Expired
-    │
-    ▼
-BGP session drop → route withdrawal (domestic routes)
-    │
-    ▼
-IGW1-CYB1 kehilangan routing table domestic dari IIX
-    │
-    ▼
-Traffic ke domestic prefix tidak ada route aktif
-(International transit & IPTV direct peering tetap aktif)
-    │
-    ▼
-Traffic drop ~6-8% di MGW2-CYB1 (domestic traffic terdampak)
-    │
-    ▼
-~60 menit kemudian BGP re-establish → route kembali
-    │
-    ▼
-Traffic recovery ~21:20 WIB
-```
+**Hipotesis awal (BGP IIX saja) TIDAK TEPAT** karena:
+- IPTV Direct Peering juga drop 84% — tidak melalui BGP IIX
+- International Transit juga drop bersamaan
+- Semua drop mulai **tepat 20:25 WIB** secara serentak
 
-### Faktor Pendukung
-1. **525 flaps** pada peer IIX — instabilitas kronis, bukan satu kejadian
-2. **Last up hanya 5 hari** — peer sering disconnect
-3. **Hold Timer Expired** — koneksi BGP timeout, bukan pemutusan disengaja
-4. **MTU errors 5.7 juta** — kemungkinan berkontribusi pada packet loss yang memperburuk BGP keepalive
+### Kandidat Root Cause (Direvisi)
+
+#### Kandidat 1: High CPU / Control Plane Issue di Juniper ⭐ Tinggi
+- Juniper MX240 bisa mengalami control plane overload
+- Jika routing engine (RE) overload, semua BGP sessions bisa timeout bersamaan
+- MTU errors 5.7 juta bisa menjadi gejala atau penyebab
+
+#### Kandidat 2: Physical Port Flap xe-2/0/2 (Link ke Semua Peer) ⭐ Tinggi
+- xe-2/0/2 adalah physical interface yang membawa SEMUA sub-interface (semua peer BGP)
+- Jika xe-2/0/2 mengalami link flap singkat → semua BGP session drop sekaligus
+- Last flap tercatat 90 minggu lalu, tapi bisa saja ada micro-flap yang tidak terecord
+
+#### Kandidat 3: Upstream Switch/Media Converter Bermasalah ⭐ Sedang
+- Ada perangkat antara IGW1-CYB1 dan upstream provider
+- Masalah di layer 2 bisa menyebabkan semua koneksi drop serentak
+
+#### Kandidat 4: BGP Route Flap Cascade ⭐ Rendah
+- IIX flap → traffic dialihkan ke international → international overload → cascade failure
+- Kurang mungkin karena IPTV direct peer juga terdampak
 
 ---
 
-## 5. Rekomendasi
+## 5. Rekonstruksi Timeline
+
+```
+~20:25 WIB
+  └─ Semua traffic interface Juniper drop serentak
+     └─ Semua BGP peer terdampak bersamaan
+        └─ Kemungkinan: xe-2/0/2 micro-flap ATAU Juniper RE overload
+
+20:25 – ~21:08 WIB
+  └─ Traffic sangat rendah di semua interface
+     └─ BGP session mencoba reconnect
+        └─ Recovery partial terlihat di 21:08 (IPTV & Uplink mulai naik)
+
+~21:12 – 21:17 WIB
+  └─ Traffic mulai recovery ke level normal
+     └─ BGP session re-established
+
+Saat investigasi (11 Juni 10:10 WIB):
+  └─ BGP International Transit baru naik 22 menit
+     └─ Indikasi masalah masih berlanjut atau baru saja ada incident lain
+```
+
+---
+
+## 6. Konfirmasi Traffic Drop dari Observium NMS ✅
+
+Data grafik traffic dari Observium NMS (`https://nms.nsc.id`):
+
+- **Drop dimulai:** tepat **20:25 WIB**
+- **Level drop:** 77-84% di interface kritis (uplink ke MikroTik & IPTV)
+- **Recovery:** bertahap mulai **21:08**, normal di **21:17 WIB**
+- **Karakteristik:** drop serentak semua interface → **bukan BGP partial failure**
+
+---
+
+## 7. Rekomendasi
 
 ### Segera
 
 | # | Tindakan | Target |
 |---|---|---|
-| 1 | Investigasi stabilitas BGP peer 123.108.8.111 (IIX) | Tim Network / NOC |
-| 2 | Konfirmasi ke IIX apakah ada gangguan jam 20:20 WIB 10 Juni | Tim Peering |
-| 3 | Nonaktifkan `radius,debug` logging di MikroTik | MGW2-CYB1 |
-| 4 | Investigasi MTU mismatch di interface xe-2/0/2 Juniper | Tim Network |
-
-### Perintah MikroTik — Nonaktifkan Radius Debug
-```bash
-/system logging disable [find topics~"radius,debug"]
-```
+| 1 | **Cek log Juniper** dengan akses yang tepat (user dengan permission read log) | NOC/Admin Juniper |
+| 2 | Cek apakah ada **CPU/RE spike** di Juniper jam 20:25 WIB | NOC/Admin |
+| 3 | Cek apakah **xe-2/0/2 mengalami micro-flap** jam 20:25 WIB | NOC/Admin |
+| 4 | Investigasi **BGP International Transit naik baru 22 menit** — apakah ada incident baru | NOC |
+| 5 | Nonaktifkan `radius,debug` logging di MikroTik | `/system logging disable [find topics~"radius,debug"]` |
 
 ### Jangka Panjang
 
 | # | Tindakan |
 |---|---|
-| 5 | Aktifkan syslog ke server eksternal di MikroTik |
-| 6 | Tambahkan monitoring BGP flap (alert jika peer down) |
-| 7 | Pasang Grafana/SNMP monitoring untuk traffic historis |
-| 8 | Review konfigurasi BGP holdtime dan keepalive timer |
-| 9 | Investigasi dan perbaiki MTU errors di xe-2/0/2 |
-| 10 | Pertimbangkan BGP route dampening untuk peer yang flappy |
+| 6 | Aktifkan syslog ke server eksternal di MikroTik |
+| 7 | Setup monitoring alert untuk BGP flap |
+| 8 | Investigasi dan perbaiki MTU errors di xe-2/0/2 (5.7 juta errors) |
+| 9 | Review BFD configuration untuk faster BGP failure detection |
+| 10 | Pasang monitoring Grafana/SNMP untuk historis CPU Juniper |
 
 ---
 
-## 5.5 Konfirmasi Traffic Drop dari Observium NMS ✅
-
-Data grafik traffic MGW2-CYB1 dari Observium NMS (`https://nms.nsc.id`) mengkonfirmasi incident:
-
-| Waktu (WIB) | Traffic Level | Status |
-|---|---|---|
-| 19:00 – 20:18 | 98–100% | Normal |
-| **20:23 – 21:12** | **92–94%** | **DROP ~6-8%** |
-| 21:17 dst | 99–100% | Recovery |
-
-**Drop dimulai tepat ~20:23 WIB dan recovery ~21:17 WIB** — sesuai laporan incident.
-
-Drop sebesar ~6-8% dari total traffic device mengindikasikan sebagian traffic (bukan semua) terdampak — **konsisten dengan BGP peer partial failure** dimana hanya route yang diiklankan peer IIX yang hilang, sementara route transit tetap aktif.
-
----
-
-## 6. Status Investigasi
+## 8. Status Investigasi
 
 | Item | Status |
 |---|---|
 | Investigasi MikroTik | ✅ Selesai |
-| Investigasi Juniper IGW1-CYB1 | ✅ Selesai (partial — log tidak bisa diakses) |
-| Identifikasi BGP peer bermasalah | ✅ Ditemukan (123.108.8.111 / IIX) |
-| Konfirmasi ke IIX | ⏳ Pending |
-| Fix radius debug logging | ⏳ Pending |
-| Fix MTU mismatch | ⏳ Pending |
+| Investigasi Juniper (via SSH read-only) | ✅ Partial |
+| Konfirmasi traffic drop dari Observium | ✅ Drop 20:25-21:17 WIB terkonfirmasi |
+| Identifikasi pola drop (serentak semua interface) | ✅ Temuan baru — revisi hipotesis |
+| Log Juniper detail (perlu akses lebih tinggi) | ⏳ Perlu admin Juniper |
+| Konfirmasi root cause final | ⏳ Pending log Juniper |
 
 ---
 
-*Investigasi dilakukan: 2026-06-10 23:36 WIB & 2026-06-11 10:00 WIB*  
+*Investigasi dilakukan: 2026-06-10 23:36 WIB & 2026-06-11 09:00-10:30 WIB*  
 *Investigator: Ilyasai (AI Assistant)*  
-*Confidence: **Medium-High** — BGP peer IIX adalah kandidat root cause paling kuat, perlu konfirmasi dari IIX*
+*Confidence: **Medium** — drop terkonfirmasi, pola serentak teridentifikasi, root cause final butuh log Juniper dengan akses lebih tinggi*
