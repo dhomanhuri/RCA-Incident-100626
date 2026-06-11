@@ -33,9 +33,10 @@
 ```
 Internet (IIX/Transit)
     │
-    ├── BGP Peer 113.59.234.208 (AS 45296) — Transit
-    ├── BGP Peer 123.108.8.111  (AS 7597)  — IIX ⚠️
-    ├── BGP Peer 123.108.9.111  (AS 7597)  — IIX
+    ├── BGP Peer 113.59.234.208 (AS 45296)  — International Transit
+    ├── BGP Peer 123.108.8.111  (AS 7597)   — Domestic (IIX) ⚠️
+    ├── BGP Peer 123.108.9.111  (AS 7597)   — Domestic (IIX)
+    ├── BGP Peer 10.9.32.1      (AS 150930) — Direct Peering IPTV
     └── BGP Peer 150.242.176.182 (AS 152069) — Internal
          │
          ▼
@@ -77,15 +78,15 @@ Tidak ada RX error atau TX drop signifikan pada sfp-sfpplus1 dan sfp-sfpplus2.
 
 ### 3.5 BGP di Juniper — Temuan Kritis ⚠️
 
-| BGP Peer | AS | Flaps | Last Up | Keterangan |
-|---|---|---|---|---|
-| 10.9.32.1 | 150930 | 53 | 6w5d | Normal |
-| 113.59.234.208 | 45296 | 75 | 6w6d | Normal |
-| **123.108.8.111** | **7597** | **525** | **5d 10:04** | **KRITIS ⚠️** |
-| 123.108.9.111 | 7597 | 117 | 4w4d | Elevated |
-| 150.242.176.182 | 152069 | 109 | 3w0d | Elevated |
+| BGP Peer | AS | Flaps | Last Up | Tipe | Keterangan |
+|---|---|---|---|---|---|
+| 10.9.32.1 | 150930 | 53 | 6w5d | Direct Peering (IPTV) | Normal |
+| 113.59.234.208 | 45296 | 75 | 6w6d | International Transit | Normal |
+| **123.108.8.111** | **7597** | **525** | **5d 10:04** | **Domestic (IIX)** | **KRITIS ⚠️** |
+| 123.108.9.111 | 7597 | 117 | 4w4d | Domestic (IIX) | Elevated |
+| 150.242.176.182 | 152069 | 109 | 3w0d | Internal | Elevated |
 
-**BGP Peer 123.108.8.111 (AS 7597 / IIX):**
+**BGP Peer 123.108.8.111 (AS 7597 / Domestic IIX):**
 - Flaps: **525** — sangat tinggi
 - Last up: **hanya 5 hari** — artinya sering disconnect-reconnect
 - Last error: `Hold Timer Expired Error`
@@ -98,24 +99,25 @@ Ini menunjukkan **BGP peer IIX mengalami instabilitas yang berulang**, termasuk 
 
 ## 4. Root Cause — Probable
 
-> **BGP Instability pada peer IIX (123.108.8.111 / AS 7597)**
+> **BGP Instability pada peer Domestic IIX (123.108.8.111 / AS 7597)**
 
 ### Mekanisme
 
 ```
-BGP peer 123.108.8.111 (IIX) Hold Timer Expired
+BGP peer 123.108.8.111 (Domestic IIX) Hold Timer Expired
     │
     ▼
-BGP session drop → route withdrawal dari IIX
+BGP session drop → route withdrawal (domestic routes)
     │
     ▼
-IGW1-CYB1 kehilangan routing table dari IIX
+IGW1-CYB1 kehilangan routing table domestic dari IIX
     │
     ▼
-Traffic destined ke IIX prefix tidak ada route aktif
+Traffic ke domestic prefix tidak ada route aktif
+(International transit & IPTV direct peering tetap aktif)
     │
     ▼
-Traffic drop di MGW2-CYB1 (downstream)
+Traffic drop ~6-8% di MGW2-CYB1 (domestic traffic terdampak)
     │
     ▼
 ~60 menit kemudian BGP re-establish → route kembali
