@@ -28,7 +28,30 @@
 
 ---
 
-## 2. Topologi
+## 2. Topologi (Lengkap)
+
+```
+TELKOMSAT ──────────── xe-0/0/0 ┐
+IIX APJII ──────────── xe-0/0/2 ┤
+IPTV PELNI ─────────── xe-0/0/3 ┤
+                                 ├── CSW1-CYB1 (QFX5120) 172.30.0.9
+IGW1-CYB1 ──────────── xe-0/0/33┤    (switch agregasi)
+MGW2-CYB1 ──────────── xe-0/0/30┘
+```
+
+Topologi sebenarnya:
+```
+Internet Upstream
+    │
+    ▼
+CSW1-CYB1 (Switch QFX5120) ← device di DEPAN Juniper
+    │ xe-0/0/33 (MTU 9000)
+    ▼
+IGW1-CYB1 (Juniper MX240) xe-2/0/2 (MTU 9216)
+    │ xe-2/0/2.11 (link ke MikroTik)
+    ▼
+MGW2-CYB1 (MikroTik CCR2116)
+```
 
 ```
 Internet
@@ -105,7 +128,32 @@ Bandingkan pola drop antar interface:
 2. **xe-2/0/2 physical drop 57%** — ini adalah root dari semua sub-interface yang terdampak
 3. IIX Domestic recovery lebih cepat (20:38) — karena IIX hanya lewat sebagian physical port capacity
 
-### 3.5 Commit History Juniper — Bukan Config Change ✅
+### 3.5 Temuan Switch CSW1-CYB1 — Evidence Terkuat ✅
+
+Switch **CSW1-CYB1 (Juniper QFX5120, 172.30.0.9)** ada di depan IGW1-CYB1:
+
+**Interface xe-0/0/33 (Switch → IGW1-CYB1):**
+
+| Metrik | Nilai | Keterangan |
+|---|---|---|
+| **Output Drops** | **24,040,979** | 24 juta packet di-drop dari switch ke Juniper! |
+| **Carrier Transitions** | **11** | 11x link naik-turun |
+| Framing errors | 20 | Ada error di level frame |
+| MTU switch xe-0/0/33 | **9000** | Lebih kecil dari Juniper (9216) |
+| MTU Juniper xe-2/0/2 | **9216** | **MTU mismatch +216 bytes** |
+
+**MTU Mismatch yang ditemukan:**
+```
+Switch xe-0/0/33 MTU = 9000
+Juniper xe-2/0/2 MTU  = 9216  ← selisih 216 bytes
+
+Packet ukuran 9001-9216 bytes dari Juniper → DROP di switch
+→ Inilah sumber 5,677,146 MTU errors di Juniper!
+```
+
+**Carrier Transitions = 11** mengindikasikan link antara switch dan Juniper pernah flap **11 kali** sejak interface terakhir reset — ini bisa menjadi penyebab langsung drop di jam 20:25 WIB.
+
+### 3.6 Commit History Juniper — Bukan Config Change ✅
 
 Tidak ada commit konfigurasi di 10 Juni 2026:
 - Commit terakhir sebelum incident: **2026-05-22 11:10 WIB** (19 hari sebelumnya)
@@ -126,7 +174,7 @@ Tidak ada commit konfigurasi di 10 Juni 2026:
 
 ### Kandidat Root Cause (Direvisi)
 
-#### 🔴 ROOT CAUSE TERKONFIRMASI: Degradasi Fisik Link di xe-2/0/2
+#### 🔴 ROOT CAUSE TERKONFIRMASI: Link Flap antara CSW1-CYB1 dan IGW1-CYB1
 
 **Evidence:**
 - Physical port xe-2/0/2 drop 57% — semua sub-interface mengikuti
@@ -137,15 +185,19 @@ Tidak ada commit konfigurasi di 10 Juni 2026:
 
 **Logika konfirmasi:**
 ```
-xe-2/0/2 (1 physical port)
+CSW1-CYB1 (Switch)
+    │ xe-0/0/33 ← 24 juta drops, 11x carrier transitions!
+    ▼
+IGW1-CYB1 (Juniper) xe-2/0/2
     ├── xe-2/0/2.2722 → IIX Domestic     ┐
     ├── xe-2/0/2.2723 → International   ├─ Semua DROP serentak
     ├── xe-2/0/2.932  → IPTV Direct Peer ┘
     └── xe-2/0/2.11   → Uplink ke MikroTik ← downstream ikut terdampak
 ```
-Jika **semua upstream** (IIX, International, IPTV) drop serentak di port yang sama → **downstream pasti ikut terdampak**. Ini bukan masalah di MikroTik, bukan Starlink, bukan BGP routing.
 
-**Mekanisme:** Link fisik upstream (fiber/kabel/SFP) mengalami degradasi bertahap sejak 19:12, mencapai titik kritis di 20:25 sehingga capacity drop drastis, kemudian recovery bertahap selama ~50 menit.
+Link antara **CSW1-CYB1 ↔ IGW1-CYB1** mengalami flap/degradasi → Juniper kehilangan konektivitas ke switch → **semua sub-interface di xe-2/0/2 terdampak** (semua upstream + downstream).
+
+**Mekanisme:** Link antara switch dan Juniper mengalami carrier transition (flap) di sekitar jam 20:25 WIB, menyebabkan semua traffic drop drastis. Recovery bertahap selama ~50 menit.
 
 #### 🟡 Kandidat 2 (SEDANG): Upstream Provider Network Issue
 
