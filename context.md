@@ -16,30 +16,29 @@ Root cause analysis traffic drop pada MikroTik MGW2-CYB1 yang terjadi pada 2026-
 
 ```
 Internet (IIX, International Transit, IPTV)
-    │
+    │ ← koneksi FISIK langsung ke CSW
     ▼
-IGW1-CYB1 (Juniper MX240, 150.242.176.161) — Router upstream/peering BGP
-    │ xe-2/0/2
-    │ (MTU 9216)
-    │ xe-0/0/33 ← LINK BERMASALAH (24jt drops, 11x carrier transition)
-    ▼
-CSW1-CYB1 (Juniper QFX5120, 172.30.0.9) — Core Switch agregasi
-    ├── xe-0/0/30 → MGW2-CYB1 (MikroTik CCR2116, 150.242.176.185)
-    ├── xe-0/0/31 → MGW-CYB-1
-    ├── xe-0/0/32 → Akastar Link Indonusa
-    └── ... MGW lainnya
-         │
-         ▼
-    MGW2-CYB1 (MikroTik CCR2116)
-         ├── v515_STARLINK_BULK1 (primary)
-         └── v531_STARLINK_BULK2 (secondary)
-              │
-              ▼
-         Customer
+┌───────────────────────────────────┐
+│  CSW1-CYB1 (QFX5120, 172.30.0.9)     │
+│  Core Switch — semua colok ke sini    │
+└───────────────────────────────────┘
+    │           │           │
+    │xe-0/0/33  │xe-0/0/30  │xe-0/0/31...
+    │⚠️FLAP     │           │
+    ▼           ▼           ▼
+IGW1-CYB1   MGW2-CYB1   MGW-CYB-1 ...
+(Juniper    (MikroTik)  (MikroTik)
+MX240)          │
+ BGP router     ▼
+            Starlink
+                │
+                ▼
+            Customer
 ```
 
-> **CSW1-CYB1 adalah core switch** — semua device (IGW, semua MGW, upstream peers) agregasi di sini.
-> Kalau link IGW ↔ CSW (xe-0/0/33) bermasalah → IGW tidak bisa reach MGW → semua customer terdampak.
+> **Semua device fisik terhubung ke CSW1-CYB1.**
+> IGW bukan "di atas" CSW, tapi colok ke CSW sebagai router BGP.
+> Ketika link CSW ↔ IGW (xe-0/0/33) flap → routing dari IGW terganggu → traffic tidak bisa keluar ke internet.
 
 ## BGP Peers IGW1-CYB1
 

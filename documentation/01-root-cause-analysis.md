@@ -32,30 +32,30 @@
 
 ```
 Internet (IIX, International Transit, IPTV)
-    │
+    │ ← koneksi FISIK langsung masuk ke CSW
     ▼
-IGW1-CYB1 (Juniper MX240, 150.242.176.161)
-── Router upstream, terminasi semua BGP peering
-    │ xe-2/0/2 (MTU 9216)
-    │
-    │ ← TITIK MASALAH: link IGW ↔ CSW flap
-    │   xe-0/0/33 (MTU 9000) — 24jt drops, 11x carrier transitions
-    ▼
-CSW1-CYB1 (Juniper QFX5120, 172.30.0.9)
-── Core Switch agregasi — semua device terhubung ke sini
-    ├── xe-0/0/30 → MGW2-CYB1 (150.242.176.185)
-    ├── xe-0/0/31 → MGW-CYB-1
-    ├── xe-0/0/32 → Akastar Link Indonusa
-    └── ... MGW lainnya
-         │
-         ▼
-    MGW2-CYB1 (MikroTik CCR2116, 150.242.176.185)
-         ├── v515_STARLINK_BULK1 (primary)
-         └── v531_STARLINK_BULK2 (secondary)
-              │
-              ▼
-         Customer
+┌───────────────────────────────────┐
+│  CSW1-CYB1 (QFX5120, 172.30.0.9)     │
+│  Core Switch — semua device colok sini │
+└───────────────────────────────────┘
+    │           │           │
+ xe-0/0/33  xe-0/0/30  xe-0/0/31...
+  ⚠️FLAP!
+    │           │           │
+    ▼           ▼           ▼
+IGW1-CYB1   MGW2-CYB1   MGW-CYB-1
+(Juniper    (MikroTik,   (MikroTik)
+MX240)       150.242.176.185)
+BGP router       │
+                 ▼
+             Starlink Bulk1/2
+                 │
+                 ▼
+             Customer
 ```
+
+> Semua koneksi fisik (internet upstream, IGW, MGW) terhubung ke CSW.
+> IGW bertugas sebagai router BGP — menerima dan memasang routing table dari/ke internet.
 
 ```
 Internet
