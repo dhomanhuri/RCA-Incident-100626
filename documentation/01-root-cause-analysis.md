@@ -88,6 +88,31 @@ MTU errors sangat tinggi — potensi penyebab packet loss yang memperburuk kondi
 
 ---
 
+## 3.4 Analisis Pola Drop Antar Interface (Evidence Kunci) ✅
+
+Bandingkan pola drop antar interface:
+
+| Interface | Pattern Drop | Recovery | Keterangan |
+|---|---|---|---|
+| **xe-2/0/2 PHYSICAL** | Drop **57%** mulai 20:25 | Bertahap sampai 21:12 | **Physical port utama** |
+| IIX Domestic | Drop 25% di 20:25 | Cepat di 20:38 | Drop ringan, cepat recover |
+| International Transit | **Fluktuatif sejak 19:12** | Naik bertahap 21:04 | **Sudah bermasalah sebelum incident!** |
+| Uplink ke MikroTik | Drop 77% di 20:25 | Bertahap 21:12 | Mengikuti physical port |
+| IPTV Direct Peer | Drop 84% di 20:25 | Bertahap 21:12 | Mengikuti physical port |
+
+**Temuan kritis:**
+1. **International Transit sudah fluktuatif dari 19:12 WIB** — 1 jam sebelum incident utama
+2. **xe-2/0/2 physical drop 57%** — ini adalah root dari semua sub-interface yang terdampak
+3. IIX Domestic recovery lebih cepat (20:38) — karena IIX hanya lewat sebagian physical port capacity
+
+### 3.5 Commit History Juniper — Bukan Config Change ✅
+
+Tidak ada commit konfigurasi di 10 Juni 2026:
+- Commit terakhir sebelum incident: **2026-05-22 11:10 WIB** (19 hari sebelumnya)
+- **Bukan human error / perubahan konfigurasi**
+
+---
+
 ## 4. Root Cause — Revisi
 
 > **Bukan hanya BGP IIX. Semua interface drop serentak → masalah di Juniper layer**
@@ -101,23 +126,33 @@ MTU errors sangat tinggi — potensi penyebab packet loss yang memperburuk kondi
 
 ### Kandidat Root Cause (Direvisi)
 
-#### Kandidat 1: High CPU / Control Plane Issue di Juniper ⭐ Tinggi
-- Juniper MX240 bisa mengalami control plane overload
-- Jika routing engine (RE) overload, semua BGP sessions bisa timeout bersamaan
-- MTU errors 5.7 juta bisa menjadi gejala atau penyebab
+#### 🔴 Kandidat 1 (TERKUAT): Degradasi Fisik Link Upstream di xe-2/0/2
 
-#### Kandidat 2: Physical Port Flap xe-2/0/2 (Link ke Semua Peer) ⭐ Tinggi
-- xe-2/0/2 adalah physical interface yang membawa SEMUA sub-interface (semua peer BGP)
-- Jika xe-2/0/2 mengalami link flap singkat → semua BGP session drop sekaligus
-- Last flap tercatat 90 minggu lalu, tapi bisa saja ada micro-flap yang tidak terecord
+**Evidence:**
+- Physical port xe-2/0/2 drop 57% — semua sub-interface mengikuti
+- **International Transit sudah fluktuatif sejak 19:12** — 1 jam sebelum incident puncak
+- PCS Bit errors & Errored blocks = 5 seconds — ada degradasi sinyal fisik
+- MTU errors 5,677,146 — indikasi kualitas link yang buruk
+- **Carrier transitions = 5** (akumulatif) — pernah ada link down/up
 
-#### Kandidat 3: Upstream Switch/Media Converter Bermasalah ⭐ Sedang
-- Ada perangkat antara IGW1-CYB1 dan upstream provider
-- Masalah di layer 2 bisa menyebabkan semua koneksi drop serentak
+**Mekanisme:** Link fisik upstream (fiber/kabel/SFP) mengalami degradasi bertahap sejak 19:12, mencapai titik kritis di 20:25 sehingga capacity drop drastis, kemudian recovery bertahap selama ~50 menit.
 
-#### Kandidat 4: BGP Route Flap Cascade ⭐ Rendah
-- IIX flap → traffic dialihkan ke international → international overload → cascade failure
-- Kurang mungkin karena IPTV direct peer juga terdampak
+#### 🟡 Kandidat 2 (SEDANG): Upstream Provider Network Issue
+
+**Evidence:**
+- International Transit sudah fluktuatif **sejak 19:12** (sebelum incident utama)
+- Bukan perubahan konfigurasi lokal (commit history bersih)
+- Recovery bertahap — konsisten dengan upstream yang perlahan membaik
+
+**Mekanisme:** Provider upstream mengalami congestion atau rerouting yang menyebabkan traffic fluktuatif, memuncak di 20:25 dengan traffic drop signifikan.
+
+#### 🟢 Kandidat 3 (RENDAH): Control Plane / CPU Spike Juniper
+
+**Counter-evidence:**
+- CPU Juniper RE saat investigasi: 4% (sangat rendah)
+- Memory: 11% (normal)
+- Tidak ada alarm chassis
+- BGP holdtime 90 detik — butuh ~90 detik timeout, bukan spike singkat
 
 ---
 
