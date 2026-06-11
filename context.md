@@ -15,29 +15,31 @@ Root cause analysis traffic drop pada MikroTik MGW2-CYB1 yang terjadi pada 2026-
 ## Topologi (Lengkap)
 
 ```
-Internet Upstream
+Internet (IIX, International Transit, IPTV)
     │
     ▼
-CSW1-CYB1 (Switch QFX5120, 172.30.0.9)
-    ├── xe-0/0/0 → TELKOMSAT (MTU 9216)
-    ├── xe-0/0/2 → IIX APJII (MTU 1514)
-    ├── xe-0/0/3 → IPTV PELNI (MTU 1514)
-    ├── xe-0/0/30 → MGW2-CYB1 MikroTik (MTU 9216)
-    └── xe-0/0/33 → IGW1-CYB1 Juniper (MTU 9000) ← MASALAH DI SINI
+IGW1-CYB1 (Juniper MX240, 150.242.176.161) — Router upstream/peering BGP
+    │ xe-2/0/2
+    │ (MTU 9216)
+    │ xe-0/0/33 ← LINK BERMASALAH (24jt drops, 11x carrier transition)
+    ▼
+CSW1-CYB1 (Juniper QFX5120, 172.30.0.9) — Core Switch agregasi
+    ├── xe-0/0/30 → MGW2-CYB1 (MikroTik CCR2116, 150.242.176.185)
+    ├── xe-0/0/31 → MGW-CYB-1
+    ├── xe-0/0/32 → Akastar Link Indonusa
+    └── ... MGW lainnya
          │
          ▼
-    IGW1-CYB1 (Juniper MX240, 150.242.176.161)
-         xe-2/0/2 (MTU 9216) ← MTU mismatch vs switch (9000)
-         ├── xe-2/0/2.11   → Uplink ke MGW2-CYB1
-         ├── xe-2/0/2.2722 → IIX Domestic (123.108.8.111)
-         ├── xe-2/0/2.2723 → International Transit (113.59.234.208)
-         └── xe-2/0/2.932  → IPTV Direct Peer (10.9.32.1)
+    MGW2-CYB1 (MikroTik CCR2116)
+         ├── v515_STARLINK_BULK1 (primary)
+         └── v531_STARLINK_BULK2 (secondary)
               │
               ▼
-         MGW2-CYB1 (MikroTik CCR2116, 150.242.176.185)
-              ├── sfp-sfpplus2 → UPLINK
-              └── sfp-sfpplus1 → DOWNLINK (pelanggan)
+         Customer
 ```
+
+> **CSW1-CYB1 adalah core switch** — semua device (IGW, semua MGW, upstream peers) agregasi di sini.
+> Kalau link IGW ↔ CSW (xe-0/0/33) bermasalah → IGW tidak bisa reach MGW → semua customer terdampak.
 
 ## BGP Peers IGW1-CYB1
 
